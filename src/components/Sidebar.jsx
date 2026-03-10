@@ -35,10 +35,10 @@ const Sidebar = () => {
     };
 
     const ownerLinks = [
-        { name: 'Dashboard', path: '/dashboard', icon: <LayoutDashboard size={20} /> },
-        { name: 'Inventory', path: '/inventory', icon: <Package size={20} /> },
-        { name: 'Billing', path: '/billing', icon: <Receipt size={20} /> },
-        { name: 'Bills History', path: '/bills-history', icon: <History size={20} /> },
+        { name: 'Main Panel', path: '/dashboard', icon: <LayoutDashboard size={20} /> },
+        { name: 'Stock & Add Products', path: '/inventory', icon: <Package size={20} /> },
+        { name: 'Create Bill', path: '/billing', icon: <Receipt size={20} /> },
+        { name: 'Review Bills', path: '/bills-history', icon: <History size={20} /> },
         { name: 'Reports', path: '/reports', icon: <BarChart2 size={20} /> },
         { name: 'Workers', path: '/workers', icon: <Users size={20} /> },
         { name: 'Settings', path: '/settings', icon: <Settings size={20} /> },

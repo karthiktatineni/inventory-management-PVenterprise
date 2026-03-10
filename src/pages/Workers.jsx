@@ -10,6 +10,7 @@ import {
 } from 'firebase/firestore';
 import { createUserWithEmailAndPassword, getAuth } from 'firebase/auth';
 import { db, auth } from '../firebase';
+import { getCache, setCache, invalidateCache, TTL } from '../utils/cache';
 import { 
   Users, 
   UserPlus, 
@@ -26,8 +27,8 @@ import {
 import toast from 'react-hot-toast';
 
 const Workers = () => {
-    const [workers, setWorkers] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const [workers, setWorkers] = useState(() => getCache('workers') || []);
+    const [loading, setLoading] = useState(!getCache('workers'));
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     
     const [formData, setFormData] = useState({
@@ -40,7 +41,9 @@ const Workers = () => {
     useEffect(() => {
         const q = query(collection(db, 'users'));
         const unsub = onSnapshot(q, (snapshot) => {
-            setWorkers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+            const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setWorkers(items);
+            setCache('workers', items, TTL.WORKERS); // cache for 5 minutes
             setLoading(false);
         });
         return () => unsub();

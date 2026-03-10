@@ -11,6 +11,7 @@ import {
   increment
 } from 'firebase/firestore';
 import { db, rtdb } from '../firebase';
+import { getCache, setCache, TTL } from '../utils/cache';
 import { ref, get, set, runTransaction as runRtdbTransaction } from 'firebase/database';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
@@ -36,7 +37,7 @@ const Billing = () => {
     const { settings } = useSettings();
     const navigate = useNavigate();
 
-    const [products, setProducts] = useState([]);
+    const [products, setProducts] = useState(() => getCache('products') || []);
     const [searchTerm, setSearchTerm] = useState('');
     const [cart, setCart] = useState([]);
     const [customerName, setCustomerName] = useState('');
@@ -46,7 +47,9 @@ const Billing = () => {
 
     useEffect(() => {
         const unsub = onSnapshot(collection(db, 'products'), (snapshot) => {
-            setProducts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+            const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setProducts(items);
+            setCache('products', items, TTL.PRODUCTS);
         });
         return () => unsub();
     }, []);
@@ -219,36 +222,55 @@ const Billing = () => {
             <div className="flex-1 flex flex-col gap-6 overflow-hidden">
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 shrink-0">
                     <h1 className="text-3xl font-black text-primary tracking-tight mb-2">Billing System</h1>
-                    <div className="relative">
+                    <div className="relative mb-6">
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
                         <input 
-                            className="input pl-12 h-14 text-lg font-bold border-2 focus:border-accent bg-slate-50"
+                            className="input pl-12 h-14 text-lg font-bold border-2 focus:border-accent bg-slate-50 w-full"
                             placeholder="Search product name or scan SKU barcode..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                         />
-                        {searchResults.length > 0 && (
-                            <div className="absolute top-full left-0 w-full mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 z-50 overflow-hidden max-h-80 overflow-y-auto ring-4 ring-primary/5">
-                                {searchResults.map(p => (
-                                    <button 
+                    </div>
+                    
+                    {/* Products Grid */}
+                    <div className="flex-1 overflow-y-auto pr-2 -mr-2">
+                        {products.length === 0 && !loading ? (
+                            <div className="h-full flex flex-col items-center justify-center text-slate-300 gap-4">
+                                <AlertCircle size={48} />
+                                <p className="font-bold text-sm uppercase tracking-widest text-center">No products found.<br/>Add items in Inventory.</p>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4">
+                                {(searchTerm ? searchResults : products).map(p => (
+                                    <div 
                                         key={p.id}
                                         onClick={() => addToCart(p)}
-                                        className="w-full text-left p-4 hover:bg-slate-50 flex justify-between items-center transition-all group"
+                                        className="bg-white border-2 border-slate-100 p-4 rounded-xl hover:border-accent hover:shadow-lg hover:-translate-y-1 cursor-pointer transition-all group flex flex-col"
                                     >
-                                        <div className="flex flex-col">
-                                            <span className="font-bold text-primary group-hover:text-accent transition-colors">{p.name}</span>
-                                            <span className="text-xs font-bold text-slate-400">SKU: {p.sku} | Unit: {p.unit}</span>
+                                        <div className="flex justify-between items-start mb-2">
+                                            <div className="flex-1 overflow-hidden pr-2">
+                                                <h3 className="font-black text-primary text-sm truncate group-hover:text-accent transition-colors">{p.name}</h3>
+                                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{p.sku}</span>
+                                            </div>
+                                            <span className="bg-slate-100 text-primary text-[10px] font-black px-2 py-1 rounded">
+                                                {p.unit}
+                                            </span>
                                         </div>
-                                        <div className="text-right flex items-center gap-4">
-                                            <div className="flex flex-col items-end">
-                                                <span className="font-black text-primary">₹{p.price.toLocaleString('en-IN')}</span>
-                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${p.quantity > 5 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
-                                                    {p.quantity} in stock
+                                        
+                                        <div className="mt-auto flex justify-between items-end">
+                                            <div>
+                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${p.quantity > 5 ? 'bg-emerald-100 text-emerald-700' : p.quantity > 0 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-600'}`}>
+                                                    {p.quantity} In Stock
                                                 </span>
                                             </div>
-                                            <Plus size={20} className="text-accent opacity-0 group-hover:opacity-100 transition-all" />
+                                            <div className="flex items-center gap-2">
+                                                <span className="font-black text-lg text-primary">₹{(p.price || 0).toLocaleString('en-IN')}</span>
+                                                <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 group-hover:bg-accent group-hover:text-white transition-colors">
+                                                    <Plus size={16} />
+                                                </div>
+                                            </div>
                                         </div>
-                                    </button>
+                                    </div>
                                 ))}
                             </div>
                         )}

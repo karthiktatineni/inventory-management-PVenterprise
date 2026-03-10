@@ -39,7 +39,7 @@ const Login = () => {
                 navigate('/dashboard');
             } else if (role === 'worker') {
                 toast.success('Worker Session Authorized');
-                navigate('/billing');
+                navigate('/inventory');
             } else {
                 toast.error('Account unauthorized: No role assigned.');
             }

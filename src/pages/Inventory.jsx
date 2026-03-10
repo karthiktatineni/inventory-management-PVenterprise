@@ -11,6 +11,8 @@ import {
   orderBy
 } from 'firebase/firestore';
 import { db } from '../firebase';
+import { supabase } from '../supabase';
+import { getCache, setCache, invalidateCache, TTL } from '../utils/cache';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
 import { 
@@ -32,8 +34,8 @@ import toast from 'react-hot-toast';
 const Inventory = () => {
     const { isAdmin } = useAuth();
     const { settings } = useSettings();
-    const [products, setProducts] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const [products, setProducts] = useState(() => getCache('products') || []);
+    const [loading, setLoading] = useState(!getCache('products'));
     const [searchTerm, setSearchTerm] = useState('');
     const [categoryFilter, setCategoryFilter] = useState('all');
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -41,6 +43,7 @@ const Inventory = () => {
     const [editingProduct, setEditingProduct] = useState(null);
     const [sortField, setSortField] = useState('name');
     const [sortOrder, setSortOrder] = useState('asc');
+    const [imageFile, setImageFile] = useState(null);
 
     // Form states
     const [formData, setFormData] = useState({
@@ -59,20 +62,59 @@ const Inventory = () => {
         const unsub = onSnapshot(q, (snapshot) => {
             const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             setProducts(items);
+            setCache('products', items, TTL.PRODUCTS); // cache for 2 mins
             setLoading(false);
         });
         return () => unsub();
     }, [sortField, sortOrder]);
 
+    const uploadToSupabase = async (file) => {
+        try {
+            const fileExt = file.name.split('.').pop();
+            const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+            const filePath = `product_images/${fileName}`;
+
+            const { error: uploadError } = await supabase.storage
+                .from('inv')
+                .upload(filePath, file);
+
+            if (uploadError) {
+                console.error('Supabase upload error:', uploadError);
+                toast.error(`Supabase Error: ${uploadError.message}`);
+                return null;
+            }
+
+            const { data } = supabase.storage
+                .from('inv')
+                .getPublicUrl(filePath);
+
+            return data.publicUrl;
+        } catch (error) {
+            console.error('Supabase upload catch:', error);
+            toast.error(`Image upload failed: ${error.message}`);
+            return null;
+        }
+    };
+
     const handleAddProduct = async (e) => {
         e.preventDefault();
         try {
+            let finalImageUrl = formData.imageUrl || '';
+            
+            if (imageFile) {
+                toast.loading('Uploading image to Supabase...', { id: 'img-upload' });
+                const uploadedUrl = await uploadToSupabase(imageFile);
+                if (uploadedUrl) finalImageUrl = uploadedUrl;
+                toast.dismiss('img-upload');
+            }
+
             const newProduct = {
                 ...formData,
                 price: Number(formData.price),
                 costPrice: Number(formData.costPrice),
                 quantity: Number(formData.quantity),
                 lowStockThreshold: Number(formData.lowStockThreshold) || 20,
+                imageUrl: finalImageUrl,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp()
             };
@@ -81,19 +123,30 @@ const Inventory = () => {
             setIsAddModalOpen(false);
             resetForm();
         } catch (error) {
-            toast.error('Error adding product');
+            toast.dismiss('img-upload');
+            console.error('Add product error:', error);
         }
     };
 
     const handleEditProduct = async (e) => {
         e.preventDefault();
         try {
+            let finalImageUrl = formData.imageUrl;
+            
+            if (imageFile) {
+                toast.loading('Uploading image to Supabase...', { id: 'img-upload-edit' });
+                const uploadedUrl = await uploadToSupabase(imageFile);
+                if (uploadedUrl) finalImageUrl = uploadedUrl;
+                toast.dismiss('img-upload-edit');
+            }
+
             const updatedProduct = {
                 ...formData,
                 price: Number(formData.price),
                 costPrice: Number(formData.costPrice),
                 quantity: Number(formData.quantity),
                 lowStockThreshold: Number(formData.lowStockThreshold),
+                imageUrl: finalImageUrl,
                 updatedAt: serverTimestamp()
             };
             await updateDoc(doc(db, 'products', editingProduct.id), updatedProduct);
@@ -102,7 +155,8 @@ const Inventory = () => {
             setEditingProduct(null);
             resetForm();
         } catch (error) {
-            toast.error('Error updating product');
+            toast.dismiss('img-upload-edit');
+            console.error('Edit product error:', error);
         }
     };
 
@@ -126,8 +180,10 @@ const Inventory = () => {
             costPrice: '',
             quantity: '',
             unit: 'pcs',
-            lowStockThreshold: 20
+            lowStockThreshold: 20,
+            imageUrl: ''
         });
+        setImageFile(null);
     };
 
     const getStatusBadge = (qty, threshold) => {
@@ -377,8 +433,16 @@ const Inventory = () => {
                                         <input type="number" required className="input" value={formData.costPrice} onChange={e => setFormData({...formData, costPrice: e.target.value})} />
                                     </div>
                                     <div>
-                                        <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest block mb-1 pl-1">Image URL</label>
-                                        <input className="input bg-slate-50 border-slate-100 focus:bg-white" value={formData.imageUrl || ''} onChange={e => setFormData({...formData, imageUrl: e.target.value})} placeholder="/path/to/image.jpg" />
+                                        <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest block mb-1 pl-1">Product Photo</label>
+                                        <input 
+                                            type="file"
+                                            accept="image/*"
+                                            className="input bg-slate-50 border-slate-100 focus:bg-white file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100" 
+                                            onChange={e => setImageFile(e.target.files[0])} 
+                                        />
+                                        {formData.imageUrl && !imageFile && (
+                                            <p className="text-[10px] font-bold text-slate-400 mt-2">Currently has an image. Uploading a new one will replace it.</p>
+                                        )}
                                     </div>
                                     <div>
                                         <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest block mb-1">Low Stock Alert at</label>

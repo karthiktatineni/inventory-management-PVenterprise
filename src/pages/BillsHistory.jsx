@@ -12,6 +12,7 @@ import {
   serverTimestamp
 } from 'firebase/firestore';
 import { db } from '../firebase';
+import { getCache, setCache, TTL } from '../utils/cache';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
 import { 
@@ -41,8 +42,8 @@ const BillsHistory = () => {
     const { settings } = useSettings();
     const [searchParams] = useSearchParams();
     
-    const [bills, setBills] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const [bills, setBills] = useState(() => getCache('bills') || []);
+    const [loading, setLoading] = useState(!getCache('bills'));
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedBill, setSelectedBill] = useState(null);
     const [isViewModalOpen, setIsViewModalOpen] = useState(false);
@@ -54,6 +55,7 @@ const BillsHistory = () => {
         const unsub = onSnapshot(q, (snapshot) => {
             const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             setBills(items);
+            setCache('bills', items, TTL.BILLS);  // cache for 1 minute
             setLoading(false);
 
             // Handle URL redirect for new bill
