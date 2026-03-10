@@ -1,6 +1,4 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { doc, onSnapshot } from 'firebase/firestore';
-import { db } from '../firebase';
 import { supabase } from '../supabase';
 import { getCache, setCache, TTL } from '../utils/cache';
 

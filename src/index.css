@@ -29,35 +29,56 @@
   }
 }
 
-/* Print Styles */
+/* Print Styles - Fully Optimized for Supabase Invoicing */
 @media print {
-  .no-print, header, nav, .sidebar, aside {
+  /* Use a more robust technique to isolate the bill */
+  body * {
+    visibility: hidden;
+  }
+  
+  #printable-bill, #printable-bill * {
+    visibility: visible;
+  }
+
+  #printable-bill {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0.5cm !important;
+    visibility: visible !important;
+  }
+
+  /* Ensure background and layout don't interfere */
+  body, html {
+    background: white !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    height: auto !important;
+  }
+
+  /* Clear any fixed/absolute parents that might clip content */
+  .fixed, .absolute {
+    position: static !important;
+    overflow: visible !important;
+  }
+
+  .no-print {
     display: none !important;
   }
-  .print-only {
-    display: block !important;
-  }
-  body {
-    background: white !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-  }
-  /* Ensure the main container doesn't restrict print flow */
-  main, .flex-1, .h-screen, #root {
-    height: auto !important;
-    overflow: visible !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    position: static !important;
-    display: block !important;
-  }
+
   @page {
-    margin: 0.5cm;
+    margin: 0;
     size: auto;
   }
 }
+
 .print-only {
   display: none;
+}
+@media print {
+  .print-only {
+    display: block !important;
+  }
 }

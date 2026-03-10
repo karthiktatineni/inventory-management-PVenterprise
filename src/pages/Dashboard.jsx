@@ -11,20 +11,6 @@ import {
   PieChart,
   Pie
 } from 'recharts';
-import { 
-  collection, 
-  query, 
-  where, 
-  getDocs, 
-  onSnapshot, 
-  orderBy, 
-  limit,
-  addDoc,
-  serverTimestamp,
-  setDoc,
-  doc
-} from 'firebase/firestore';
-import { db } from '../firebase';
 import { supabase } from '../supabase';
 import { invalidateCacheByPrefix } from '../utils/cache';
 import { 
@@ -144,11 +130,11 @@ const Dashboard = () => {
         try {
             const BASE = window.location.origin;
             const products = [
-                { name: "Premium Brake Pad Set",      category: "Brakes",    sku: "PV-BRK-001", price: 1250,  costPrice: 850,  quantity: 100, unit: "set",  lowStockThreshold: 15, imageUrl: `${BASE}/WhatsApp Image 2026-03-10 at 8.58.12 AM.jpeg` },
-                { name: "Hydraulic Engine Oil 5W-40",  category: "Lubricants",sku: "PV-OIL-002", price: 3400,  costPrice: 2800, quantity: 100, unit: "ltr",  lowStockThreshold: 10, imageUrl: `${BASE}/WhatsApp Image 2026-03-10 at 8.58.13 AM.jpeg` },
-                { name: "LED Fog Lamp Kit (H8)",       category: "Lighting",  sku: "PV-LIT-003", price: 2150,  costPrice: 1250, quantity: 100, unit: "pair", lowStockThreshold: 20, imageUrl: `${BASE}/WhatsApp Image 2026-03-10 at 8.58.13 AM (1).jpeg` },
-                { name: "Premium Leather Seat Covers",category: "Interior",  sku: "PV-INT-004", price: 12500, costPrice: 8500, quantity: 100, unit: "set",  lowStockThreshold: 5,  imageUrl: `${BASE}/WhatsApp Image 2026-03-10 at 8.58.14 AM.jpeg` },
-                { name: "Heavy Duty Suspension Bush", category: "Chassis",   sku: "PV-SUS-005", price: 850,   costPrice: 420,  quantity: 100, unit: "pcs",  lowStockThreshold: 25, imageUrl: `${BASE}/WhatsApp Image 2026-03-10 at 8.58.14 AM (1).jpeg` },
+                { name: "Premium Brake Pad Set",      category: "Brakes",    sku: "PV-BRK-001", price: 1250,  cost_price: 850,  quantity: 100, unit: "set",  low_stock_threshold: 15, image_url: `${BASE}/WhatsApp%20Image%202026-03-10%20at%208.58.12%20AM.jpeg` },
+                { name: "Hydraulic Engine Oil 5W-40",  category: "Lubricants",sku: "PV-OIL-002", price: 3400,  cost_price: 2800, quantity: 100, unit: "ltr",  low_stock_threshold: 10, image_url: `${BASE}/WhatsApp%20Image%202026-03-10%20at%208.58.13%20AM.jpeg` },
+                { name: "LED Fog Lamp Kit (H8)",       category: "Lighting",  sku: "PV-LIT-003", price: 2150,  cost_price: 1250, quantity: 100, unit: "pair", low_stock_threshold: 20, image_url: `${BASE}/WhatsApp%20Image%202026-03-10%20at%208.58.13%20AM%20(1).jpeg` },
+                { name: "Premium Leather Seat Covers",category: "Interior",  sku: "PV-INT-004", price: 12500, cost_price: 8500, quantity: 100, unit: "set",  low_stock_threshold: 5,  image_url: `${BASE}/WhatsApp%20Image%202026-03-10%20at%208.58.14%20AM.jpeg` },
+                { name: "Heavy Duty Suspension Bush", category: "Chassis",   sku: "PV-SUS-005", price: 850,   cost_price: 420,  quantity: 100, unit: "pcs",  low_stock_threshold: 25, image_url: `${BASE}/WhatsApp%20Image%202026-03-10%20at%208.58.14%20AM%20(1).jpeg` },
             ];
 
             // 1. Insert Products

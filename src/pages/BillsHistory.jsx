@@ -1,17 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  collection, 
-  query, 
-  onSnapshot, 
-  orderBy, 
-  where,
-  deleteDoc,
-  doc,
-  runTransaction,
-  increment,
-  serverTimestamp
-} from 'firebase/firestore';
-import { db } from '../firebase';
 import { supabase } from '../supabase';
 import { getCache, setCache, invalidateCache, TTL } from '../utils/cache';
 import { useAuth } from '../context/AuthContext';
@@ -280,8 +267,8 @@ const BillsHistory = () => {
 
             {/* Bill Preview Modal */}
             {isViewModalOpen && selectedBill && (
-                <div className="fixed inset-0 bg-primary/20 backdrop-blur-sm z-[150] flex items-center justify-center p-4 overflow-y-auto print:p-0 print:bg-white print:static print:z-0">
-                    <div className="bg-slate-100/50 rounded-3xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl animate-in zoom-in-95 duration-200 print:shadow-none print:max-h-none print:rounded-none print:w-full print:bg-white print:static">
+                <div className="fixed inset-0 bg-primary/20 backdrop-blur-sm z-[150] flex items-center justify-center p-4 overflow-y-auto print:p-0 print:bg-white print:static print:z-0 print:block print:overflow-visible">
+                    <div className="bg-slate-100/50 rounded-3xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl animate-in zoom-in-95 duration-200 print:shadow-none print:max-h-none print:rounded-none print:w-full print:bg-white print:static print:overflow-visible print:animate-none">
                         {/* Header Controls */}
                         <div className="p-4 bg-white border-b border-slate-200 flex justify-between items-center z-10 sticky top-0 no-print">
                             <div className="flex gap-2">
@@ -298,7 +285,7 @@ const BillsHistory = () => {
                         </div>
 
                         {/* Printable Area */}
-                        <div className="flex-1 overflow-y-auto bg-slate-500/20 p-8 flex justify-center">
+                        <div className="flex-1 overflow-y-auto bg-slate-500/20 p-8 flex justify-center print:p-0 print:bg-transparent print:overflow-visible">
                             <div 
                                 id="printable-bill"
                                 className="bg-white w-[210mm] min-h-[297mm] p-12 shadow-2xl relative border border-slate-300 print:shadow-none print:border-none print:w-full print:m-0"

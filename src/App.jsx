@@ -12,6 +12,7 @@ import Billing from './pages/Billing';
 import BillsHistory from './pages/BillsHistory';
 import Settings from './pages/Settings';
 import Workers from './pages/Workers';
+import Reports from './pages/Reports';
 import { auth } from './firebase';
 
 const SessionManager = () => {
@@ -33,8 +34,7 @@ const SessionManager = () => {
   return null;
 };
 
-// Reports Placeholder
-const Reports = () => <Layout><h1 className="text-2xl font-bold">Business Reports</h1><p>Comprehensive reports coming soon...</p></Layout>;
+// Reports removed from placeholder as it is now imported from separate page
 
 function App() {
   return (

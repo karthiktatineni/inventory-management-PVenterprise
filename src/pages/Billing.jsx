@@ -1,19 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  collection, 
-  query, 
-  onSnapshot, 
-  runTransaction, 
-  doc, 
-  serverTimestamp,
-  getDoc,
-  setDoc,
-  increment
-} from 'firebase/firestore';
-import { db, rtdb } from '../firebase';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabase';
 import { getCache, setCache, TTL } from '../utils/cache';
-import { ref, get, set, runTransaction as runRtdbTransaction } from 'firebase/database';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
 import { 
@@ -32,6 +19,9 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
+import { format } from 'date-fns';
+import JsBarcode from 'jsbarcode';
+import html2pdf from 'html2pdf.js';
 
 const Billing = () => {
     const { userData } = useAuth();
@@ -45,6 +35,24 @@ const Billing = () => {
     const [customerPhone, setCustomerPhone] = useState('');
     const [loading, setLoading] = useState(false);
     const [showConfirm, setShowConfirm] = useState(false);
+    const [showSuccess, setShowSuccess] = useState(false);
+    const [lastBill, setLastBill] = useState(null);
+    const barcodeRef = useRef(null);
+
+    useEffect(() => {
+        if (showSuccess && lastBill && barcodeRef.current) {
+            JsBarcode(barcodeRef.current, lastBill.billId, {
+                format: "CODE128",
+                width: 1.5,
+                height: 40,
+                displayValue: true,
+                fontSize: 10,
+                margin: 0,
+                background: "#ffffff",
+                lineColor: "#000000"
+            });
+        }
+    }, [showSuccess, lastBill]);
 
     useEffect(() => {
         const fetchProducts = async () => {
@@ -188,7 +196,29 @@ const Billing = () => {
 
             toast.success('Bill generated successfully!');
             invalidateCache('products'); // Refresh local inventory
-            navigate(`/bills-history?ref=${billId}&print=true`); 
+            
+            // Set success data and show modal
+            setLastBill({
+                billId,
+                customerName,
+                customerPhone,
+                items: cart.map(item => ({
+                    productId: item.id,
+                    productName: item.name,
+                    quantity: item.cartQuantity,
+                    unitPrice: item.price,
+                    totalPrice: item.price * item.cartQuantity,
+                    unit: item.unit
+                })),
+                subtotal,
+                gstPercent,
+                gstAmount,
+                grandTotal,
+                createdAt: new Date().toISOString(),
+                workerName: userData?.name || 'Worker'
+            });
+            setShowSuccess(true);
+            setShowConfirm(false);
         } catch (error) {
             console.error('Billing Error:', error);
             toast.error(error.message || 'Error generating bill');
@@ -240,15 +270,14 @@ const Billing = () => {
                                     >
                                         {/* Compact Image */}
                                         <div className="aspect-square bg-slate-50 relative overflow-hidden flex items-center justify-center">
-                                            {p.imageUrl ? (
+                                            {(p.imageUrl || p.image_url) ? (
                                                 <img 
-                                                    src={p.imageUrl} 
+                                                    src={p.imageUrl || p.image_url} 
                                                     alt={p.name}
                                                     onError={(e) => {
                                                         e.target.onerror = null;
-                                                        e.target.src = '';
                                                         e.target.style.display = 'none';
-                                                        e.target.parentElement.innerHTML = '<div class="bg-slate-100 h-full w-full flex items-center justify-center"><svg class="text-slate-300" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1Z"></path><path d="M16 8h-4l-1 5h4"></path><path d="M16 16h-9"></path></svg></div>';
+                                                        e.target.parentElement.innerHTML = '<div class="bg-slate-100 h-full w-full flex items-center justify-center text-slate-300"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1Z"></path></svg></div>';
                                                     }}
                                                     className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                                                 />
@@ -391,31 +420,135 @@ const Billing = () => {
                 </div>
             </div>
 
-            {/* Confirmation Modal */}
-            {showConfirm && (
-                <div className="fixed inset-0 bg-primary/60 backdrop-blur-md z-[110] flex items-center justify-center p-4">
-                    <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-sm overflow-hidden border-4 border-slate-50 p-8 text-center space-y-4">
-                        <div className="w-16 h-16 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center mx-auto">
-                            <AlertCircle size={32} />
-                        </div>
-                        <div>
-                            <h2 className="text-xl font-black text-primary">Finalize Bill?</h2>
-                            <p className="text-slate-500 text-xs font-medium mt-1">Sure you want to create bill for <span className="text-primary font-black">₹{grandTotal.toLocaleString()}</span>?</p>
-                        </div>
-                        
-                        <div className="flex flex-col gap-2">
-                            <button 
-                                onClick={handleCreateBill}
-                                className="w-full btn btn-primary h-12 text-xs font-black uppercase"
-                            >
-                                Yes, Create & Print
-                            </button>
-                            <button 
-                                onClick={() => setShowConfirm(false)}
-                                className="w-full btn btn-outline h-12 text-xs font-black uppercase"
-                            >
-                                Cancel
-                            </button>
+            {/* Post-Success Actions & Preview */}
+            {showSuccess && lastBill && (
+                <div className="fixed inset-0 bg-primary/40 backdrop-blur-xl z-[200] flex flex-col items-center p-4 overflow-y-auto pt-20 no-scrollbar">
+                    {/* Floating Controls */}
+                    <div className="fixed top-6 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-white/90 backdrop-blur shadow-2xl p-2 rounded-2xl border border-slate-200 z-[210] animate-in slide-in-from-top-4 no-print">
+                        <button 
+                            onClick={() => window.print()} 
+                            className="btn btn-primary h-12 px-6 gap-2 font-black uppercase text-[10px] tracking-widest shadow-xl shadow-primary/20"
+                        >
+                            <Printer size={16} /> Print Bill
+                        </button>
+                        <button 
+                            onClick={() => {
+                                const element = document.getElementById('printable-bill');
+                                html2pdf().from(element).save(`${lastBill.billId}.pdf`);
+                            }} 
+                            className="btn btn-accent h-12 px-6 gap-2 font-black uppercase text-[10px] tracking-widest shadow-xl shadow-accent/20"
+                        >
+                            <Download size={16} /> Save PDF
+                        </button>
+                        <div className="w-px h-6 bg-slate-200 mx-1" />
+                        <button 
+                            onClick={() => {
+                                setCart([]);
+                                setCustomerName('');
+                                setCustomerPhone('');
+                                setShowSuccess(false);
+                                setLastBill(null);
+                            }} 
+                            className="btn bg-emerald-500 text-white hover:bg-emerald-600 h-12 px-8 font-black uppercase text-[10px] tracking-widest shadow-xl shadow-emerald-500/20"
+                        >
+                            Finish & New Bill
+                        </button>
+                    </div>
+
+                    {/* Bill Preview Wrapper */}
+                    <div className="w-full max-w-4xl bg-white rounded-[2rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 border border-slate-200 mb-20 printable-area-wrapper">
+                        <div id="printable-bill" className="p-12 bg-white min-h-[10in]">
+                            {/* Header */}
+                            <div className="flex flex-col items-center text-center space-y-4 pb-8 border-b-4 border-primary">
+                                <div className="space-y-1">
+                                    <h1 className="text-5xl font-black text-primary tracking-tighter italic uppercase">{settings.shop_name || 'PV ENTERPRISES'}</h1>
+                                    <p className="text-slate-500 font-bold uppercase tracking-[0.2em] text-[10px]">{settings.shop_address}</p>
+                                </div>
+                                <div className="flex items-center gap-6 text-[10px] font-black text-slate-400">
+                                    <span className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-accent" /> {settings.shop_phone}</span>
+                                    <span className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-accent" /> GST: {settings.gst_number || 'N/A'}</span>
+                                </div>
+                            </div>
+
+                            {/* Info Section */}
+                            <div className="py-8 grid grid-cols-2 gap-12 font-medium border-b border-slate-100">
+                                <div className="space-y-4">
+                                    <div className="space-y-1">
+                                        <span className="text-[10px] uppercase font-black text-slate-300 tracking-widest">Customer Details</span>
+                                        <h2 className="text-xl font-black text-primary uppercase">{lastBill.customerName}</h2>
+                                        <p className="text-sm font-bold text-slate-400">{lastBill.customerPhone || 'NO PHONE ATTACHED'}</p>
+                                    </div>
+                                </div>
+                                <div className="text-right space-y-4">
+                                    <div className="space-y-1">
+                                        <span className="text-[10px] uppercase font-black text-slate-300 tracking-widest">Bill Reference</span>
+                                        <h2 className="text-xl font-black text-indigo-600 font-mono">{lastBill.billId}</h2>
+                                        <p className="text-sm font-bold text-slate-400">{format(new Date(lastBill.createdAt), 'dd MMM yyyy, hh:mm a')}</p>
+                                    </div>
+                                    <div className="text-[10px] font-black text-slate-300 uppercase italic">Sold At BACHUPALLY - Served BY: {lastBill.workerName}</div>
+                                </div>
+                            </div>
+
+                            {/* Table */}
+                            <div className="py-8">
+                                <table className="w-full text-left">
+                                    <thead>
+                                        <tr className="border-b-2 border-slate-900">
+                                            <th className="py-4 text-xs font-black uppercase tracking-widest">#</th>
+                                            <th className="py-4 text-xs font-black uppercase tracking-widest">Item Description</th>
+                                            <th className="py-4 text-center text-xs font-black uppercase tracking-widest">Qty</th>
+                                            <th className="py-4 text-right text-xs font-black uppercase tracking-widest">Rate</th>
+                                            <th className="py-4 text-right text-xs font-black uppercase tracking-widest">Amount</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {lastBill.items.map((item, idx) => (
+                                            <tr key={idx} className="border-b border-slate-50 font-medium">
+                                                <td className="py-4 text-slate-400">{idx + 1}</td>
+                                                <td className="py-4">
+                                                    <div className="flex flex-col">
+                                                        <span className="font-bold text-slate-800">{item.productName}</span>
+                                                        <span className="text-[10px] text-slate-400 uppercase tracking-widest font-black">REF: {item.productId.slice(0, 8)}</span>
+                                                    </div>
+                                                </td>
+                                                <td className="py-4 text-center font-bold text-slate-600">{item.quantity} {item.unit}</td>
+                                                <td className="py-4 text-right text-slate-600">₹{item.unitPrice.toLocaleString('en-IN')}</td>
+                                                <td className="py-4 text-right font-black text-primary">₹{item.totalPrice.toLocaleString('en-IN')}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            {/* Totals */}
+                            <div className="flex justify-end py-8">
+                                <div className="w-80 space-y-3">
+                                    <div className="flex justify-between text-sm font-medium text-slate-500">
+                                        <span>Subtotal</span>
+                                        <span>₹{lastBill.subtotal.toLocaleString('en-IN')}</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm font-medium text-slate-500 pb-3 border-b border-slate-100">
+                                        <span>GST ({lastBill.gstPercent}%)</span>
+                                        <span>₹{lastBill.gstAmount.toLocaleString('en-IN')}</span>
+                                    </div>
+                                    <div className="flex justify-between pt-3">
+                                        <span className="text-sm font-black uppercase text-slate-800 tracking-tighter italic">GRAND TOTAL</span>
+                                        <span className="text-2xl font-black text-primary">₹{lastBill.grandTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Footer */}
+                            <div className="mt-20 pt-12 border-t-2 border-slate-900 border-dashed text-center space-y-8">
+                                <div className="space-y-2">
+                                    <p className="text-lg font-black text-primary tracking-[0.2em] italic uppercase">Authentic Parts • Supreme Service</p>
+                                    <p className="text-[10px] font-bold text-slate-400 px-20">This is a system generated invoice. Please retain this bill for your service history. Goods once sold are not eligible for cash refunds. Contact support for part warranties.</p>
+                                </div>
+                                <div className="flex flex-col items-center gap-2">
+                                    <canvas ref={barcodeRef}></canvas>
+                                    <p className="text-[8px] font-mono font-black text-slate-400 opacity-50 uppercase tracking-widest">{lastBill.billId}</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
