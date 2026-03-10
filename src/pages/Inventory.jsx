@@ -115,7 +115,7 @@ const Inventory = () => {
             const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
             const filePath = `product_images/${fileName}`;
 
-            const bucket = 'inv'; // Using 'inv' as specified
+            const bucket = 'products'; // Reverting to 'products' as per setup guide for consistency
             const { error: uploadError } = await supabase.storage
                 .from(bucket)
                 .upload(filePath, file);

@@ -61,7 +61,7 @@ const BillsHistory = () => {
             if (data && !error) {
                 const mapped = data.map(b => ({
                     id: b.id,
-                    billId: b.id, // Using the primary key as billId
+                    billId: b.bill_id || b.id, // Use human-readable bill_id from RPC
                     customerName: b.customer_name,
                     customerPhone: b.customer_phone,
                     workerName: b.worker_name,
@@ -180,14 +180,14 @@ const BillsHistory = () => {
 
     return (
         <div className="space-y-6">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-100 no-print">
                 <div>
                     <h1 className="text-3xl font-black text-primary tracking-tight">Bill History</h1>
                     <p className="text-slate-500 font-medium">View and manage all generated invoices</p>
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm leading-none ring-4 ring-slate-50">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm leading-none ring-4 ring-slate-50 no-print">
                 <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                     <input 
@@ -204,7 +204,7 @@ const BillsHistory = () => {
                 </div>
             </div>
 
-            <div className="card border-none shadow-xl shadow-slate-200/50">
+            <div className="card border-none shadow-xl shadow-slate-200/50 no-print">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left">
                         <thead className="bg-slate-50/50 border-b border-slate-100">
@@ -350,7 +350,7 @@ const BillsHistory = () => {
                                                     <td className="py-4">
                                                         <div className="flex flex-col">
                                                             <span className="font-bold text-slate-800">{item.productName}</span>
-                                                            <span className="text-[10px] text-slate-400">CAT: ACC-ITEM-{idx}</span>
+                                                            <span className="text-[10px] text-slate-400">ITEM-REF: {item.productId.slice(0, 8)}</span>
                                                         </div>
                                                     </td>
                                                     <td className="py-4 text-center font-bold text-slate-600">{item.quantity} {item.unit}</td>

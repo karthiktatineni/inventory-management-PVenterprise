@@ -244,6 +244,12 @@ const Billing = () => {
                                                 <img 
                                                     src={p.imageUrl} 
                                                     alt={p.name}
+                                                    onError={(e) => {
+                                                        e.target.onerror = null;
+                                                        e.target.src = '';
+                                                        e.target.style.display = 'none';
+                                                        e.target.parentElement.innerHTML = '<div class="bg-slate-100 h-full w-full flex items-center justify-center"><svg class="text-slate-300" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1Z"></path><path d="M16 8h-4l-1 5h4"></path><path d="M16 16h-9"></path></svg></div>';
+                                                    }}
                                                     className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                                                 />
                                             ) : (

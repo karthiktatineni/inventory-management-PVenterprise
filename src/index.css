@@ -45,15 +45,17 @@
     print-color-adjust: exact !important;
   }
   /* Ensure the main container doesn't restrict print flow */
-  main, .flex-1, .h-screen {
+  main, .flex-1, .h-screen, #root {
     height: auto !important;
     overflow: visible !important;
     padding: 0 !important;
     margin: 0 !important;
     position: static !important;
+    display: block !important;
   }
   @page {
     margin: 0.5cm;
+    size: auto;
   }
 }
 .print-only {
