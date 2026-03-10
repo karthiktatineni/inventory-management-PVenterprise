@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-900;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-md font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2;
+  }
+  .btn-primary {
+    @apply bg-primary text-white hover:bg-navy-900 focus:ring-navy-800;
+  }
+  .btn-accent {
+    @apply bg-accent text-white hover:bg-orange-600 focus:ring-accent;
+  }
+  .btn-outline {
+    @apply border border-slate-300 bg-transparent hover:bg-slate-100;
+  }
+  .input {
+    @apply w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent;
+  }
+  .card {
+    @apply bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden;
+  }
+}
+
+/* Print Styles */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  body {
+    background: white;
+    padding: 0;
+  }
+  @page {
+    margin: 1cm;
+  }
+  .card {
+    border: none;
+    box-shadow: none;
+  }
+}
+.print-only {
+  display: none;
+}
