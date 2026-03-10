@@ -25,6 +25,7 @@ import {
   doc
 } from 'firebase/firestore';
 import { db } from '../firebase';
+import { supabase } from '../supabase';
 import { invalidateCacheByPrefix } from '../utils/cache';
 import { 
   TrendingUp, 
@@ -54,25 +55,36 @@ const Dashboard = () => {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        // Real-time stats listener
-        const unsubProducts = onSnapshot(collection(db, 'products'), (snapshot) => {
-            const items = snapshot.docs.map(doc => doc.data());
-            const low = items.filter(i => i.quantity > 0 && i.quantity <= (i.lowStockThreshold || 20)).length;
-            const out = items.filter(i => i.quantity === 0).length;
-            setStats(prev => ({ ...prev, totalProducts: items.length, lowStockCount: low, outOfStockCount: out }));
-        });
+        const fetchStats = async () => {
+            // 1. All products for stock counts
+            const { data: products, error: pError } = await supabase.from('products').select('*');
+            if (products) {
+                const mapped = products.map(i => ({
+                    ...i,
+                    lowStockThreshold: i.low_stock_threshold || 20,
+                    quantity: Number(i.quantity) || 0
+                }));
+                const low = mapped.filter(i => i.quantity > 0 && i.quantity <= i.lowStockThreshold).length;
+                const out = mapped.filter(i => i.quantity === 0).length;
+                setStats(prev => ({ ...prev, totalProducts: products.length, lowStockCount: low, outOfStockCount: out }));
+            }
 
-        // Today's stats
-        const today = new Date();
-        today.setHours(0,0,0,0);
-        const qToday = query(collection(db, 'bills'), where('createdAt', '>=', today));
-        const unsubToday = onSnapshot(qToday, (snapshot) => {
-            const bills = snapshot.docs.map(doc => doc.data());
-            const revenue = bills.reduce((sum, b) => sum + b.grandTotal, 0);
-            setStats(prev => ({ ...prev, todayBills: bills.length, todayRevenue: revenue }));
-        });
+            // 2. Today's bills
+            const today = new Date();
+            today.setHours(0,0,0,0);
+            const todayISO = today.toISOString();
+            
+            const { data: bills, error: bError } = await supabase
+                .from('bills')
+                .select('grand_total')
+                .gte('created_at', todayISO);
 
-        // Last 7 days revenue
+            if (bills) {
+                const revenue = bills.reduce((sum, b) => sum + Number(b.grand_total), 0);
+                setStats(prev => ({ ...prev, todayBills: bills.length, todayRevenue: revenue }));
+            }
+        };
+
         const fetchChartData = async () => {
             const last7Days = Array.from({ length: 7 }, (_, i) => {
                 const d = subDays(new Date(), i);
@@ -81,36 +93,55 @@ const Dashboard = () => {
 
             const start = subDays(new Date(), 7);
             start.setHours(0,0,0,0);
-            const qChart = query(collection(db, 'bills'), where('createdAt', '>=', start));
-            const snap = await getDocs(qChart);
+            const startISO = start.toISOString();
+
+            const { data: chartBills, error: cError } = await supabase
+                .from('bills')
+                .select('grand_total, created_at')
+                .gte('created_at', startISO);
             
-            snap.docs.forEach(doc => {
-                const data = doc.data();
-                const bDate = data.createdAt.toDate();
-                const dayMatch = last7Days.find(d => isSameDay(d.fullDate, bDate));
-                if (dayMatch) dayMatch.amount += data.grandTotal;
-            });
-            
+            if (chartBills) {
+                chartBills.forEach(bill => {
+                    const bDate = new Date(bill.created_at);
+                    const dayMatch = last7Days.find(d => isSameDay(d.fullDate, bDate));
+                    if (dayMatch) dayMatch.amount += Number(bill.grand_total);
+                });
+            }
             setRevenueData(last7Days);
         };
 
-    const unsubRecent = onSnapshot(query(collection(db, 'bills'), orderBy('createdAt', 'desc'), limit(5)), (snap) => {
-            setRecentBills(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-        });
+        const fetchRecentBills = async () => {
+            const { data, error } = await supabase
+                .from('bills')
+                .select('*')
+                .order('created_at', { ascending: false })
+                .limit(5);
+            
+            if (data) setRecentBills(data);
+        };
 
+        fetchStats();
         fetchChartData();
+        fetchRecentBills();
+
+        // Listen for changes
+        const productsChannel = supabase.channel('dashboard_products').on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, fetchStats).subscribe();
+        const billsChannel = supabase.channel('dashboard_bills').on('postgres_changes', { event: '*', schema: 'public', table: 'bills' }, () => { fetchStats(); fetchChartData(); fetchRecentBills(); }).subscribe();
+
         setLoading(false);
 
-        return () => { unsubProducts(); unsubToday(); unsubRecent(); };
+        return () => {
+            supabase.removeChannel(productsChannel);
+            supabase.removeChannel(billsChannel);
+        };
     }, []);
 
     const seedInitialData = async () => {
-        const confirm = window.confirm("Populate inventory with PV Enterprises initial seed products and images? (5 items, 100 stock each)");
+        const confirm = window.confirm("Populate Supabase with PV Enterprises initial seed products and images? (5 items, 100 stock each)");
         if (!confirm) return;
 
-        toast.loading('Seeding product database with images...');
+        toast.loading('Seeding Supabase inventory...');
         try {
-            // Image URLs from the /public folder — served by Vite at runtime
             const BASE = window.location.origin;
             const products = [
                 { name: "Premium Brake Pad Set",      category: "Brakes",    sku: "PV-BRK-001", price: 1250,  costPrice: 850,  quantity: 100, unit: "set",  lowStockThreshold: 15, imageUrl: `${BASE}/WhatsApp Image 2026-03-10 at 8.58.12 AM.jpeg` },
@@ -120,34 +151,34 @@ const Dashboard = () => {
                 { name: "Heavy Duty Suspension Bush", category: "Chassis",   sku: "PV-SUS-005", price: 850,   costPrice: 420,  quantity: 100, unit: "pcs",  lowStockThreshold: 25, imageUrl: `${BASE}/WhatsApp Image 2026-03-10 at 8.58.14 AM (1).jpeg` },
             ];
 
-            for (const p of products) {
-                await addDoc(collection(db, 'products'), {
-                    ...p,
-                    createdAt: serverTimestamp(),
-                    updatedAt: serverTimestamp()
-                });
-            }
+            // 1. Insert Products
+            const { error: pError } = await supabase.from('products').insert(products);
+            if (pError) throw pError;
 
-            // Seed settings too
-            await setDoc(doc(db, 'settings', 'shopConfig'), {
-                shopName: 'PV Enterprises',
-                shopAddress: 'Shop No G-1 JBS Towers, Bachupally, Hyderabad',
-                shopPhone: '7893008877',
-                gstNumber: '36AAAAA0000A1Z5',
-                gstPercent: 18,
-                lowStockGlobalThreshold: 20,
-                ownerEmail: 'owner@pventerprises.com'
+            // 2. Seed settings
+            const { error: sError } = await supabase.from('settings').upsert({
+                id: 'shopConfig',
+                shop_name: 'PV Enterprises',
+                shop_address: 'Shop No G-1 JBS Towers, Bachupally, Hyderabad',
+                shop_phone: '7893008877',
+                gst_number: '36AAAAA0000A1Z5',
+                gst_percent: 18,
+                low_stock_global_threshold: 20,
+                owner_email: 'owner@pventerprises.com'
             });
+            if (sError) throw sError;
 
-            // Bust product and settings caches so pages reload fresh data
+            // 3. Seed owner profile if possible (Firebase UIDs are needed, we use a dummy for now if not logged in)
+            // But usually we just need the 'owner' role to exist for the current user.
+            
             invalidateCacheByPrefix('products');
             invalidateCacheByPrefix('settings');
 
             toast.dismiss();
-            toast.success('Inventory seeded successfully with images!');
+            toast.success('Inventory seeded successfully in Supabase!');
         } catch (error) {
             toast.dismiss();
-            toast.error('Seeding failed: Check Firestore Rules');
+            toast.error('Seeding failed: Check Supabase Tables & RLS');
             console.error(error);
         }
     };
@@ -241,12 +272,12 @@ const Dashboard = () => {
                                 </div>
                                 <div className="flex-1 overflow-hidden">
                                     <div className="flex justify-between items-start">
-                                        <span className="font-bold text-sm text-primary truncate pr-2">{bill.customerName}</span>
-                                        <span className="text-xs font-black text-slate-800">₹{bill.grandTotal.toLocaleString('en-IN')}</span>
+                                        <span className="font-bold text-sm text-primary truncate pr-2">{bill.customer_name}</span>
+                                        <span className="text-xs font-black text-slate-800">₹{bill.grand_total.toLocaleString('en-IN')}</span>
                                     </div>
                                     <div className="flex justify-between items-center mt-1">
-                                        <span className="text-[10px] font-bold text-slate-400 font-mono tracking-tighter uppercase">{bill.billId}</span>
-                                        <span className="text-[10px] font-bold text-slate-400 capitalize">{format(bill.createdAt.toDate(), 'hh:mm a')}</span>
+                                        <span className="text-[10px] font-bold text-slate-400 font-mono tracking-tighter uppercase">{bill.id}</span>
+                                        <span className="text-[10px] font-bold text-slate-400 capitalize">{format(new Date(bill.created_at), 'hh:mm a')}</span>
                                     </div>
                                 </div>
                             </div>

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useSettings } from '../context/SettingsContext';
 import { db, storage } from '../firebase';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { supabase } from '../supabase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { 
   Building2, 
@@ -32,13 +33,29 @@ const Settings = () => {
         e.preventDefault();
         setLoading(true);
         try {
-            await setDoc(doc(db, 'settings', 'shopConfig'), {
-                ...formData,
-                updatedAt: serverTimestamp()
-            }, { merge: true });
+            const dbData = {
+                id: 'shopConfig',
+                shop_name: formData.shopName,
+                shop_address: formData.shopAddress,
+                shop_phone: formData.shopPhone,
+                gst_number: formData.gstNumber,
+                gst_percent: formData.gstPercent,
+                low_stock_global_threshold: formData.lowStockGlobalThreshold,
+                owner_email: formData.ownerEmail,
+                telegram_bot_token: formData.telegramBotToken,
+                telegram_chat_id: formData.telegramChatId,
+                updated_at: new Date().toISOString()
+            };
+
+            const { error } = await supabase
+                .from('settings')
+                .upsert(dbData);
+
+            if (error) throw error;
             toast.success('Shop settings updated successfully');
         } catch (error) {
-            toast.error('Error updating settings');
+            console.error('Settings Update Error:', error);
+            toast.error(`Error updating settings: ${error.message}`);
         } finally {
             setLoading(false);
         }

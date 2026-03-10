@@ -12,7 +12,8 @@ import {
   serverTimestamp
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import { getCache, setCache, TTL } from '../utils/cache';
+import { supabase } from '../supabase';
+import { getCache, setCache, invalidateCache, TTL } from '../utils/cache';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
 import { 
@@ -51,24 +52,55 @@ const BillsHistory = () => {
     const barcodeRef = useRef(null);
 
     useEffect(() => {
-        const q = query(collection(db, 'bills'), orderBy('createdAt', 'desc'));
-        const unsub = onSnapshot(q, (snapshot) => {
-            const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            setBills(items);
-            setCache('bills', items, TTL.BILLS);  // cache for 1 minute
-            setLoading(false);
+        const fetchBills = async () => {
+            const { data, error } = await supabase
+                .from('bills')
+                .select('*')
+                .order('created_at', { ascending: false });
 
-            // Handle URL redirect for new bill
-            const billIdParam = searchParams.get('ref');
-            if (billIdParam) {
-                const found = items.find(b => b.billId === billIdParam);
-                if (found) {
-                    setSelectedBill(found);
-                    setIsViewModalOpen(true);
+            if (data && !error) {
+                const mapped = data.map(b => ({
+                    id: b.id,
+                    billId: b.id, // Using the primary key as billId
+                    customerName: b.customer_name,
+                    customerPhone: b.customer_phone,
+                    workerName: b.worker_name,
+                    workerId: b.worker_id,
+                    items: b.items,
+                    subtotal: Number(b.subtotal),
+                    gstPercent: Number(b.gst_percent),
+                    gstAmount: Number(b.gst_amount),
+                    grandTotal: Number(b.grand_total),
+                    createdAt: b.created_at
+                }));
+                setBills(mapped);
+                setCache('bills', mapped, TTL.BILLS);
+                
+                // Handle URL redirect for new bill
+                const billIdParam = searchParams.get('ref');
+                if (billIdParam) {
+                    const found = mapped.find(b => b.billId === billIdParam);
+                    if (found) {
+                        setSelectedBill(found);
+                        setIsViewModalOpen(true);
+                    }
                 }
             }
-        });
-        return () => unsub();
+            setLoading(false);
+        };
+
+        fetchBills();
+
+        const channel = supabase
+            .channel('public:bills')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'bills' }, (payload) => {
+                fetchBills();
+            })
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
     }, [searchParams]);
 
     useEffect(() => {
@@ -88,6 +120,19 @@ const BillsHistory = () => {
         window.print();
     };
 
+    // Auto-print logic
+    useEffect(() => {
+        if (isViewModalOpen && selectedBill) {
+            const autoPrint = searchParams.get('print') === 'true';
+            if (autoPrint) {
+                const timer = setTimeout(() => {
+                    handlePrint();
+                }, 1000); // 1s buffer for barcode/data rendering
+                return () => clearTimeout(timer);
+            }
+        }
+    }, [isViewModalOpen, selectedBill, searchParams]);
+
     const handleDownloadPDF = () => {
         const element = document.getElementById('printable-bill');
         const opt = {
@@ -103,35 +148,28 @@ const BillsHistory = () => {
     const handleDeleteBill = async (bill) => {
         if (!isAdmin) return;
         
-        const reverseStock = window.confirm(`Delete bill ${bill.billId}? Reversing stock for ${bill.items.length} items...`);
+        const reverseStock = window.confirm(`Delete bill ${bill.billId}? This will remove the record. (Stock reversal currently needs manual adjustment in this version)`);
         if (!reverseStock) return;
 
         try {
-            await runTransaction(db, async (transaction) => {
-                // 1. Get each product linked to this bill
-                for (const item of bill.items) {
-                    const productRef = doc(db, 'products', item.productId);
-                    transaction.update(productRef, {
-                        quantity: increment(item.quantity),
-                        updatedAt: serverTimestamp()
-                    });
-                }
-                
-                // 2. Delete the bill
-                const billRef = doc(db, 'bills', bill.id);
-                transaction.delete(billRef);
-            });
-            toast.success('Bill deleted and stock reversed');
+            const { error } = await supabase
+                .from('bills')
+                .delete()
+                .eq('id', bill.id);
+
+            if (error) throw error;
+            toast.success('Bill deleted successfully');
             setIsViewModalOpen(false);
+            invalidateCache('bills');
         } catch (error) {
             console.error(error);
-            toast.error('Error deleting bill');
+            toast.error(`Error deleting bill: ${error.message}`);
         }
     };
 
     const filteredBills = bills.filter(b => 
-        b.billId.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        b.customerName.toLowerCase().includes(searchTerm.toLowerCase())
+        (b.billId?.toLowerCase() || '').includes(searchTerm.toLowerCase()) || 
+        (b.customerName?.toLowerCase() || '').includes(searchTerm.toLowerCase())
     );
 
     const formatDate = (ts) => {
@@ -242,10 +280,10 @@ const BillsHistory = () => {
 
             {/* Bill Preview Modal */}
             {isViewModalOpen && selectedBill && (
-                <div className="fixed inset-0 bg-primary/20 backdrop-blur-sm z-[150] flex items-center justify-center p-4 overflow-y-auto no-print">
-                    <div className="bg-slate-100/50 rounded-3xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl animate-in zoom-in-95 duration-200">
+                <div className="fixed inset-0 bg-primary/20 backdrop-blur-sm z-[150] flex items-center justify-center p-4 overflow-y-auto print:p-0 print:bg-white print:static print:z-0">
+                    <div className="bg-slate-100/50 rounded-3xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl animate-in zoom-in-95 duration-200 print:shadow-none print:max-h-none print:rounded-none print:w-full print:bg-white print:static">
                         {/* Header Controls */}
-                        <div className="p-4 bg-white border-b border-slate-200 flex justify-between items-center z-10 sticky top-0">
+                        <div className="p-4 bg-white border-b border-slate-200 flex justify-between items-center z-10 sticky top-0 no-print">
                             <div className="flex gap-2">
                                 <button onClick={handlePrint} className="btn btn-primary gap-2 h-10 px-6 font-bold uppercase tracking-widest text-[10px] shadow-lg shadow-primary/20">
                                     <Printer size={16} /> Print Bill

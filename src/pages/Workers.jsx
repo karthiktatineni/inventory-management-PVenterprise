@@ -10,6 +10,7 @@ import {
 } from 'firebase/firestore';
 import { createUserWithEmailAndPassword, getAuth } from 'firebase/auth';
 import { db, auth } from '../firebase';
+import { supabase } from '../supabase';
 import { getCache, setCache, invalidateCache, TTL } from '../utils/cache';
 import { 
   Users, 
@@ -39,44 +40,58 @@ const Workers = () => {
     });
 
     useEffect(() => {
-        const q = query(collection(db, 'users'));
-        const unsub = onSnapshot(q, (snapshot) => {
-            const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            setWorkers(items);
-            setCache('workers', items, TTL.WORKERS); // cache for 5 minutes
+        const fetchWorkers = async () => {
+            const { data, error } = await supabase
+                .from('profiles')
+                .select('*')
+                .order('role', { ascending: false });
+
+            if (data && !error) {
+                setWorkers(data);
+                setCache('workers', data, TTL.WORKERS);
+            }
             setLoading(false);
-        });
-        return () => unsub();
+        };
+
+        fetchWorkers();
+
+        const channel = supabase
+            .channel('public:profiles')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, fetchWorkers)
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
     }, []);
 
     const handleAddWorker = async (e) => {
         e.preventDefault();
         setLoading(true);
         try {
-            // Note: In real production, this should be done via Cloud Functions
-            // Firebase client SDK doesn't allow creating another user while logged in
-            // as owner unless using a second auth instance or Cloud Function.
-            // For now, we simulate the structure.
-            toast.loading('Creating worker secure account...');
+            toast.loading('Registering worker in Supabase...');
             
-            // This will error if owner is logged in (security constraint of FB)
-            // USER: Use Firebase Admin SDK or Cloud Function for this in prod!
-            // I will implement the firestore logic here.
+            // Note: Auth creation still happens via Firebase (if implemented)
+            // or manually by owner. Here we just create the profile.
+            const profileId = formData.email.replace(/[^a-zA-Z0-9]/g, '_'); // Dummy ID if auth not used
             
-            const workerRef = doc(db, 'users', formData.email.replace(/[^a-zA-Z0-9]/g, '_'));
-            await setDoc(workerRef, {
+            const { error } = await supabase.from('profiles').upsert({
+                id: profileId,
                 name: formData.name,
                 email: formData.email,
                 role: formData.role,
-                createdAt: serverTimestamp()
+                created_at: new Date().toISOString()
             });
 
+            if (error) throw error;
+
             toast.dismiss();
-            toast.success('Worker document created. (Auth must be added manually or via Admin SDK)');
+            toast.success('Worker profile created in Supabase!');
             setIsAddModalOpen(false);
+            invalidateCache('workers');
         } catch (error) {
             toast.dismiss();
-            toast.error('Error: Check Cloud Function deployment');
+            toast.error(`Error: ${error.message}`);
         } finally {
             setLoading(false);
         }
@@ -89,8 +104,14 @@ const Workers = () => {
         }
         if (window.confirm(`Are you sure you want to deactivate ${worker.name}?`)) {
             try {
-                await deleteDoc(doc(db, 'users', worker.id));
+                const { error } = await supabase
+                    .from('profiles')
+                    .delete()
+                    .eq('id', worker.id);
+
+                if (error) throw error;
                 toast.success('Worker deactivated');
+                invalidateCache('workers');
             } catch (error) {
                 toast.error('Error deleting worker');
             }

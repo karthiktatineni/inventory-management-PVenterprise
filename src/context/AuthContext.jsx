@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
+import { supabase } from '../supabase';
 
 const AuthContext = createContext();
 
@@ -16,17 +17,25 @@ export const AuthProvider = ({ children }) => {
       if (user) {
         let roleData = null;
         try {
-          const userDoc = await getDoc(doc(db, 'users', user.uid));
-          if (userDoc.exists()) {
-            roleData = userDoc.data();
+          // Fetch role data from Supabase instead of Firestore
+          const { data, error } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', user.uid)
+            .single();
+
+          if (data && !error) {
+            roleData = data;
+          } else if (error) {
+             console.warn("Supabase profile get error:", error.message);
           }
         } catch (error) {
-          console.warn("Firestore access denied, using email fallback logic.");
+          console.warn("Supabase access denied or error:", error.message);
         }
 
         if (!roleData) {
           // Emergency fallback for specific testing emails
-          const email = user.email.toLowerCase();
+          const email = user.email ? user.email.toLowerCase() : '';
           if (email === 'owner@gmail.com') {
             roleData = { name: 'Shop Owner', email, role: 'owner' };
           } else if (email === 'worker@gmail.com') {

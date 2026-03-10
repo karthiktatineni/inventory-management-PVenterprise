@@ -70,7 +70,7 @@ const Sidebar = () => {
                 />
             )}
 
-            <div className={`fixed inset-y-0 left-0 w-64 bg-primary text-slate-300 z-50 transform transition-transform duration-300 ease-in-out lg:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+            <div className={`fixed inset-y-0 left-0 w-64 bg-primary text-slate-300 z-50 transform transition-transform duration-300 ease-in-out lg:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'} sidebar no-print`}>
                 <div className="p-6">
                     <h2 className="text-xl font-bold text-white mb-1">PV Enterprises</h2>
                     <p className="text-xs text-slate-400">Inventory Management System</p>

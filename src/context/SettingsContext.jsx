@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
+import { supabase } from '../supabase';
 import { getCache, setCache, TTL } from '../utils/cache';
 
 const SettingsContext = createContext();
@@ -25,16 +26,42 @@ export const SettingsProvider = ({ children }) => {
   const [loading, setLoading] = useState(!getCache('settings'));
 
   useEffect(() => {
-    const unsub = onSnapshot(doc(db, 'settings', 'shopConfig'), (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
-        setSettings(data);
-        setCache('settings', data, TTL.SETTINGS); // cache for 10 minutes
+    const fetchSettings = async () => {
+      const { data, error } = await supabase
+        .from('settings')
+        .select('*')
+        .eq('id', 'shopConfig')
+        .single();
+
+      if (data && !error) {
+        const mapped = {
+          shopName: data.shop_name,
+          shopAddress: data.shop_address,
+          shopPhone: data.shop_phone,
+          gstNumber: data.gst_number,
+          gstPercent: Number(data.gst_percent),
+          lowStockGlobalThreshold: Number(data.low_stock_global_threshold),
+          ownerEmail: data.owner_email,
+          telegramBotToken: data.telegram_bot_token,
+          telegramChatId: data.telegram_chat_id,
+          initialSetupDone: true
+        };
+        setSettings(mapped);
+        setCache('settings', mapped, TTL.SETTINGS);
       }
       setLoading(false);
-    });
+    };
 
-    return () => unsub();
+    fetchSettings();
+
+    const channel = supabase
+      .channel('public:settings')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'settings', filter: 'id=eq.shopConfig' }, fetchSettings)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   return (

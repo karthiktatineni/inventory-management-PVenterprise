@@ -58,14 +58,55 @@ const Inventory = () => {
     });
 
     useEffect(() => {
-        const q = query(collection(db, 'products'), orderBy(sortField, sortOrder));
-        const unsub = onSnapshot(q, (snapshot) => {
-            const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            setProducts(items);
-            setCache('products', items, TTL.PRODUCTS); // cache for 2 mins
+        setLoading(true);
+        const fetchProducts = async () => {
+            const { data, error } = await supabase
+                .from('products')
+                .select('*')
+                .order(sortField === 'costPrice' ? 'cost_price' : sortField === 'lowStockThreshold' ? 'low_stock_threshold' : sortField, 
+                { ascending: sortOrder === 'asc' });
+
+            if (error) {
+                console.error('Inventory Fetch Error:', error);
+                toast.error(`Error loading products: ${error.message}`);
+                setLoading(false);
+                return;
+            }
+            
+            // Map snake_case from Supabase to camelCase for JS
+            const mapped = (data || []).map(p => ({
+                id: p.id,
+                name: p.name,
+                category: p.category,
+                sku: p.sku,
+                price: Number(p.price),
+                costPrice: Number(p.cost_price),
+                quantity: Number(p.quantity),
+                unit: p.unit,
+                lowStockThreshold: Number(p.low_stock_threshold),
+                imageUrl: p.image_url,
+                createdAt: p.created_at,
+                updatedAt: p.updated_at
+            }));
+
+            setProducts(mapped);
+            setCache('products', mapped, TTL.PRODUCTS); 
             setLoading(false);
-        });
-        return () => unsub();
+        };
+
+        fetchProducts();
+
+        // Real-time subscription
+        const channel = supabase
+            .channel('public:products')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, (payload) => {
+                fetchProducts();
+            })
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
     }, [sortField, sortOrder]);
 
     const uploadToSupabase = async (file) => {
@@ -74,8 +115,9 @@ const Inventory = () => {
             const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
             const filePath = `product_images/${fileName}`;
 
+            const bucket = 'inv'; // Using 'inv' as specified
             const { error: uploadError } = await supabase.storage
-                .from('inv')
+                .from(bucket)
                 .upload(filePath, file);
 
             if (uploadError) {
@@ -85,7 +127,7 @@ const Inventory = () => {
             }
 
             const { data } = supabase.storage
-                .from('inv')
+                .from(bucket)
                 .getPublicUrl(filePath);
 
             return data.publicUrl;
@@ -109,22 +151,31 @@ const Inventory = () => {
             }
 
             const newProduct = {
-                ...formData,
-                price: Number(formData.price),
-                costPrice: Number(formData.costPrice),
-                quantity: Number(formData.quantity),
-                lowStockThreshold: Number(formData.lowStockThreshold) || 20,
-                imageUrl: finalImageUrl,
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp()
+                name: formData.name,
+                category: formData.category,
+                sku: formData.sku,
+                price: Number(formData.price) || 0,
+                cost_price: Number(formData.costPrice) || 0,
+                quantity: Number(formData.quantity) || 0,
+                unit: formData.unit || 'pcs',
+                low_stock_threshold: Number(formData.lowStockThreshold) || 20,
+                image_url: finalImageUrl || '',
+                updated_at: new Date().toISOString()
             };
-            await addDoc(collection(db, 'products'), newProduct);
+            
+            console.log('Sending to Supabase:', newProduct);
+            const { error } = await supabase.from('products').insert([newProduct]);
+
+            if (error) throw error;
+
             toast.success('Product added successfully');
             setIsAddModalOpen(false);
             resetForm();
+            invalidateCache('products'); 
         } catch (error) {
             toast.dismiss('img-upload');
             console.error('Add product error:', error);
+            toast.error(`Supabase Error: ${error.message}`);
         }
     };
 
@@ -141,32 +192,50 @@ const Inventory = () => {
             }
 
             const updatedProduct = {
-                ...formData,
-                price: Number(formData.price),
-                costPrice: Number(formData.costPrice),
-                quantity: Number(formData.quantity),
-                lowStockThreshold: Number(formData.lowStockThreshold),
-                imageUrl: finalImageUrl,
-                updatedAt: serverTimestamp()
+                name: formData.name,
+                category: formData.category,
+                sku: formData.sku,
+                price: Number(formData.price) || 0,
+                cost_price: Number(formData.costPrice) || 0,
+                quantity: Number(formData.quantity) || 0,
+                unit: formData.unit || 'pcs',
+                low_stock_threshold: Number(formData.lowStockThreshold) || 20,
+                image_url: finalImageUrl || '',
+                updated_at: new Date().toISOString()
             };
-            await updateDoc(doc(db, 'products', editingProduct.id), updatedProduct);
+
+            const { error } = await supabase
+                .from('products')
+                .update(updatedProduct)
+                .eq('id', editingProduct.id);
+
+            if (error) throw error;
+
             toast.success('Product updated successfully');
             setIsEditModalOpen(false);
             setEditingProduct(null);
             resetForm();
+            invalidateCache('products');
         } catch (error) {
             toast.dismiss('img-upload-edit');
             console.error('Edit product error:', error);
+            toast.error(`Supabase Error: ${error.message}`);
         }
     };
 
     const handleDelete = async (id) => {
         if (window.confirm('Are you sure you want to delete this product?')) {
             try {
-                await deleteDoc(doc(db, 'products', id));
+                const { error } = await supabase
+                    .from('products')
+                    .delete()
+                    .eq('id', id);
+
+                if (error) throw error;
                 toast.success('Product deleted');
+                invalidateCache('products');
             } catch (error) {
-                toast.error('Error deleting product');
+                toast.error(`Error deleting product: ${error.message}`);
             }
         }
     };
@@ -193,7 +262,7 @@ const Inventory = () => {
         return <span className="bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full text-xs font-bold ring-1 ring-emerald-400">In Stock</span>;
     };
 
-    const categories = ['All', ...new Set(products.map(p => p.category))];
+    const categories = ['All', ...new Set(products.filter(p => p.category).map(p => p.category))];
 
     const filteredProducts = products.filter(p => {
         const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -250,11 +319,11 @@ const Inventory = () => {
                 <div className="relative">
                     <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                     <select 
-                        className="input pl-10 h-11 appearance-none cursor-pointer"
+                        className="input pl-10 h-11 appearance-none cursor-pointer capitalize"
                         value={categoryFilter}
                         onChange={(e) => setCategoryFilter(e.target.value)}
                     >
-                        {categories.map(c => <option key={c} value={c.toLowerCase()}>{c}</option>)}
+                        {categories.map(c => <option key={c} value={c?.toLowerCase() || ''}>{c}</option>)}
                     </select>
                 </div>
                 <div className="flex items-center gap-3 p-2 bg-slate-50 rounded-lg">

@@ -40,7 +40,7 @@ const Layout = ({ children }) => {
                 </header>
 
                 {/* Page Content */}
-                <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-8 scroll-smooth pb-20 no-print">
+                <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-8 scroll-smooth pb-20">
                     {children}
                 </div>
             </main>

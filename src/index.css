@@ -31,22 +31,29 @@
 
 /* Print Styles */
 @media print {
-  .no-print {
+  .no-print, header, nav, .sidebar, aside {
     display: none !important;
   }
   .print-only {
     display: block !important;
   }
   body {
-    background: white;
-    padding: 0;
+    background: white !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  /* Ensure the main container doesn't restrict print flow */
+  main, .flex-1, .h-screen {
+    height: auto !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    position: static !important;
   }
   @page {
-    margin: 1cm;
-  }
-  .card {
-    border: none;
-    box-shadow: none;
+    margin: 0.5cm;
   }
 }
 .print-only {
